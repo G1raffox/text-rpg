@@ -1,1 +1,158 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>텍스트 RPG</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .container { max-width: 500px; width: 100%; }
+  h1 { text-align: center; font-size: 2rem; color: #e94560; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: #aaa; font-size: 14px; margin-bottom: 30px; }
+  .genre-box { margin-bottom: 20px; }
+  .genre-box p { font-size: 14px; color: #aaa; margin-bottom: 10px; }
+  .genre-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  .genre-btn { border: 1px solid #444; border-radius: 999px; padding: 6px 16px; font-size: 13px; background: transparent; color: #eee; cursor: pointer; }
+  .genre-btn.active { background: #e94560; border-color: #e94560; color: #fff; }
+  #start-btn { width: 100%; padding: 14px; background: #e94560; border: none; border-radius: 10px; color: #fff; font-size: 16px; cursor: pointer; margin-top: 10px; }
+  #start-btn:hover { background: #c73652; }
+  #game { display: none; }
+  .stats { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .stat { background: #16213e; border-radius: 8px; padding: 6px 14px; font-size: 13px; color: #aaa; }
+  .stat span { color: #fff; font-weight: bold; }
+  .story-box { background: #16213e; border-radius: 12px; padding: 20px; font-size: 15px; line-height: 1.8; min-height: 160px; margin-bottom: 16px; border: 1px solid #2a2a4a; }
+  .choices { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+  .choice-btn { background: #16213e; border: 1px solid #2a2a4a; border-radius: 10px; padding: 12px 16px; font-size: 14px; color: #eee; cursor: pointer; text-align: left; }
+  .choice-btn:hover { border-color: #e94560; color: #e94560; }
+  .choice-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .loading { color: #888; font-size: 14px; font-style: italic; padding: 8px 0; display: none; }
+  .bottom-bar { display: flex; justify-content: space-between; align-items: center; }
+  #restart-btn { background: none; border: none; color: #888; font-size: 13px; cursor: pointer; text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>⚔️ 텍스트 RPG</h1>
+  <p class="subtitle">AI가 만들어가는 나만의 이야기</p>
 
+  <div id="setup">
+    <div class="genre-box">
+      <p>장르를 선택하세요</p>
+      <div class="genre-btns">
+        <button class="genre-btn active" data-genre="판타지">⚔️ 판타지</button>
+        <button class="genre-btn" data-genre="SF">🚀 SF</button>
+        <button class="genre-btn" data-genre="미스터리">🔍 미스터리</button>
+        <button class="genre-btn" data-genre="호러">👻 호러</button>
+      </div>
+    </div>
+    <button id="start-btn">모험 시작 →</button>
+  </div>
+
+  <div id="game">
+    <div class="stats">
+      <div class="stat">장르: <span id="stat-genre">판타지</span></div>
+      <div class="stat">선택: <span id="stat-turns">0</span>번째</div>
+      <div class="stat">결말까지: <span id="stat-left">5</span>번</div>
+    </div>
+    <div class="story-box" id="story">이야기를 불러오는 중...</div>
+    <div class="loading" id="loading">AI가 이야기를 쓰고 있어요...</div>
+    <div class="choices" id="choices"></div>
+    <div class="bottom-bar">
+      <button id="restart-btn">처음부터 다시</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let genre = '판타지';
+let turns = 0;
+const maxTurns = 5;
+let storyHistory = [];
+let choiceHistory = [];
+
+document.querySelectorAll('.genre-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.genre-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    genre = btn.dataset.genre;
+  });
+});
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('restart-btn').addEventListener('click', () => {
+  document.getElementById('game').style.display = 'none';
+  document.getElementById('setup').style.display = 'block';
+  turns = 0; storyHistory = []; choiceHistory = [];
+});
+
+async function startGame() {
+  document.getElementById('setup').style.display = 'none';
+  document.getElementById('game').style.display = 'block';
+  document.getElementById('stat-genre').textContent = genre;
+  await fetchStory(null);
+}
+
+async function fetchStory(choice) {
+  const loading = document.getElementById('loading');
+  const storyBox = document.getElementById('story');
+  const choicesDiv = document.getElementById('choices');
+  loading.style.display = 'block';
+  choicesDiv.innerHTML = '';
+
+  const isEnding = turns >= maxTurns;
+  const historyText = storyHistory.map((s, i) => `[장면${i+1}] ${s} [선택] ${choiceHistory[i]||''}`).join('\n');
+
+  let prompt = '';
+  if (turns === 0) {
+    prompt = `당신은 ${genre} 장르 텍스트 RPG 게임 마스터입니다. 흥미로운 오프닝 장면(3문장)을 쓰고 선택지 3개를 제시하세요. 반드시 JSON만 응답: {"story":"내용","choices":["선택1","선택2","선택3"]}`;
+  } else if (isEnding) {
+    prompt = `${genre} RPG 게임 마스터입니다.\n${historyText}\n"${choice}" 선택 후 감동적인 결말(4문장)을 써주세요. JSON만: {"story":"결말","choices":[]}`;
+  } else {
+    prompt = `${genre} RPG 게임 마스터입니다.\n${historyText}\n"${choice}" 선택 후 이어지는 장면(3문장)과 선택지 3개. JSON만: {"story":"내용","choices":["선택1","선택2","선택3"]}`;
+  }
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] })
+    });
+    const data = await res.json();
+    const text = data.content.map(i => i.text || '').join('');
+    const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
+
+    storyHistory.push(parsed.story);
+    storyBox.textContent = parsed.story;
+    loading.style.display = 'none';
+
+    if (parsed.choices && parsed.choices.length > 0) {
+      parsed.choices.forEach(c => {
+        const btn = document.createElement('button');
+        btn.className = 'choice-btn';
+        btn.textContent = c;
+        btn.onclick = () => makeChoice(c);
+        choicesDiv.appendChild(btn);
+      });
+    } else {
+      const p = document.createElement('p');
+      p.style.cssText = 'text-align:center;color:#888;padding:10px;';
+      p.textContent = '— 이야기가 끝났습니다 —';
+      choicesDiv.appendChild(p);
+    }
+    document.getElementById('stat-turns').textContent = turns;
+    document.getElementById('stat-left').textContent = Math.max(0, maxTurns - turns);
+  } catch(e) {
+    loading.style.display = 'none';
+    storyBox.textContent = '오류가 발생했습니다. 새로고침 후 다시 시도해주세요.';
+  }
+}
+
+function makeChoice(choice) {
+  choiceHistory.push(choice);
+  turns++;
+  fetchStory(choice);
+}
+</script>
+</body>
+</html>
